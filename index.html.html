@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Photo Joiner</title>
+  <style>
+    :root{
+      --bg:#050d0a; --panel:#0b1f18; --neon:#24ff6d; --muted:#8de4b7; --danger:#ff3b3b;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"JetBrains Mono",monospace;background:var(--bg);color:var(--neon);min-height:100vh;display:flex;flex-direction:column}
+    header{padding:12px;text-align:center;background:rgba(36,255,109,0.05);border-bottom:1px solid rgba(36,255,109,0.2)}
+    header h1{font-size:20px;text-shadow:0 0 10px rgba(36,255,109,0.5)}
+    .container{flex:1;display:grid;gap:12px;padding:12px}
+    @media(min-width:900px){.container{grid-template-columns:1fr 1fr}}
+    .panel{background:var(--panel);border:1px solid rgba(36,255,109,0.15);border-radius:12px;padding:12px}
+    .dz-item{margin-bottom:10px;padding:10px;border:1px dashed rgba(36,255,109,0.3);border-radius:10px;display:flex;align-items:center;gap:10px}
+    .thumb{width:70px;height:70px;background:#000;border-radius:8px;overflow:hidden}
+    .thumb img{width:100%;height:100%;object-fit:cover}
+    .btn{padding:6px 12px;border-radius:8px;border:1px solid var(--neon);background:transparent;color:var(--neon);cursor:pointer}
+    .btn.secondary{border-color:rgba(36,255,109,.3);color:var(--muted)}
+    .btn.danger{border-color:var(--danger);color:#ff9a9a}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:13px}
+    .controls label{display:flex;align-items:center;gap:4px}
+    .small-input{padding:4px;border-radius:6px;border:1px solid rgba(36,255,109,.3);background:transparent;color:var(--neon)}
+    canvas{width:100%;height:auto;border-radius:10px;background:#000}
+    footer{text-align:center;font-size:12px;color:var(--muted);padding:8px}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PHOTO JOINER</h1>
+    <div style="font-size:12px;color:var(--muted)">Live Preview | Same Size | JPG + PNG + PDF Export</div>
+  </header>
+
+  <div class="container">
+    <!-- Upload + Controls -->
+    <section class="panel">
+      <div class="dz-item">
+        <div class="thumb" id="thumb1"></div>
+        <label class="btn" for="file1">Choose Photo 1<input id="file1" type="file" accept="image/*" hidden></label>
+        <button class="btn secondary" id="clear1">Clear</button>
+      </div>
+      <div class="dz-item">
+        <div class="thumb" id="thumb2"></div>
+        <label class="btn" for="file2">Choose Photo 2<input id="file2" type="file" accept="image/*" hidden></label>
+        <button class="btn secondary" id="clear2">Clear</button>
+      </div>
+
+      <div class="controls">
+        <label>Layout:
+          <select id="orient" class="small-input">
+            <option value="h">Left-Right</option>
+            <option value="v">Top-Bottom</option>
+          </select>
+        </label>
+        <label>Gap: <input id="gap" type="number" class="small-input" value="0"></label>
+        <label>Padding: <input id="pad" type="number" class="small-input" value="0"></label>
+        <label>Border: <input id="border" type="number" class="small-input" value="0"></label>
+        <label>BG: <input id="bgColor" type="color" value="#000000"></label>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="dlPng">Download PNG</button>
+        <button class="btn" id="dlJpg">Download JPG</button>
+        <button class="btn" id="dlPdf">Download PDF</button>
+        <button class="btn danger" id="resetBtn">Reset</button>
+      </div>
+    </section>
+
+    <!-- Preview -->
+    <section class="panel">
+      <canvas id="canvas" width="800" height="500"></canvas>
+    </section>
+  </div>
+
+  <footer>powerd by BAPON BARMON</footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    const { jsPDF } = window.jspdf;
+    const $ = s=>document.querySelector(s);
+
+    const file1=$('#file1'), file2=$('#file2');
+    const thumb1=$('#thumb1'), thumb2=$('#thumb2');
+    const clear1=$('#clear1'), clear2=$('#clear2');
+    const canvas=$('#canvas'), ctx=canvas.getContext('2d');
+
+    let img1=null, img2=null;
+
+    function setThumb(el,img){
+      el.innerHTML='';
+      if(img){
+        let i=document.createElement('img');
+        i.src=img.src;
+        el.appendChild(i);
+      }
+    }
+
+    function readFile(file){
+      return new Promise((res,rej)=>{
+        let url=URL.createObjectURL(file);
+        let i=new Image();
+        i.onload=()=>{URL.revokeObjectURL(url);res(i)};
+        i.onerror=rej;
+        i.src=url;
+      });
+    }
+
+    file1.onchange=async()=>{if(file1.files[0]){img1=await readFile(file1.files[0]);setThumb(thumb1,img1);draw();}}
+    file2.onchange=async()=>{if(file2.files[0]){img2=await readFile(file2.files[0]);setThumb(thumb2,img2);draw();}}
+
+    clear1.onclick=()=>{img1=null;setThumb(thumb1,null);draw();}
+    clear2.onclick=()=>{img2=null;setThumb(thumb2,null);draw();}
+
+    function draw(){
+      const g=parseInt($('#gap').value)||0,
+            p=parseInt($('#pad').value)||0,
+            b=parseInt($('#border').value)||0,
+            o=$('#orient').value;
+
+      if(!img1 && !img2){
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle=$('#bgColor').value;
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        return;
+      }
+
+      if(!img1 || !img2){
+        let img=img1||img2;
+        canvas.width=400; canvas.height=400;
+        ctx.fillStyle=$('#bgColor').value;
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img,p+b,p+b,canvas.width-(p+b)*2,canvas.height-(p+b)*2);
+        return;
+      }
+
+      // force same size
+      let targetW=Math.max(img1.width,img2.width);
+      let targetH=Math.max(img1.height,img2.height);
+      let A={w:targetW,h:targetH,img:img1};
+      let B={w:targetW,h:targetH,img:img2};
+
+      if(o==='h'){ // side by side
+        canvas.width=A.w+B.w+g+p*2+b*2;
+        canvas.height=Math.max(A.h,B.h)+p*2+b*2;
+      }else{ // top-bottom
+        canvas.width=Math.max(A.w,B.w)+p*2+b*2;
+        canvas.height=A.h+B.h+g+p*2+b*2;
+      }
+
+      ctx.fillStyle=$('#bgColor').value;
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      if(o==='h'){
+        ctx.drawImage(A.img,p+b,p+b,A.w,A.h);
+        ctx.drawImage(B.img,p+b+A.w+g,p+b,B.w,B.h);
+      }else{
+        ctx.drawImage(A.img,p+b,p+b,A.w,A.h);
+        ctx.drawImage(B.img,p+b,p+b+A.h+g,B.w,B.h);
+      }
+
+      if(b>0){
+        ctx.lineWidth=b;
+        ctx.strokeStyle='#24ff6d';
+        ctx.strokeRect(0,0,canvas.width,canvas.height);
+      }
+    }
+
+    // Live redraw on controls
+    ['gap','pad','border','bgColor','orient'].forEach(id=>{
+      $('#'+id).addEventListener('input',draw);
+      $('#'+id).addEventListener('change',draw);
+    });
+
+    // Download buttons
+    $('#dlPng').onclick=()=>{canvas.toBlob(b=>{let a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='joined.png';a.click();});}
+    $('#dlJpg').onclick=()=>{let url=canvas.toDataURL('image/jpeg',0.9);let a=document.createElement('a');a.href=url;a.download='joined.jpg';a.click();}
+    $('#dlPdf').onclick=()=>{
+      let img=canvas.toDataURL('image/png');
+      const pdf=new jsPDF({unit:'px',format:[canvas.width,canvas.height]});
+      pdf.addImage(img,'PNG',0,0,canvas.width,canvas.height);
+      pdf.save('joined.pdf');
+    }
+
+    $('#resetBtn').onclick=()=>{
+      img1=img2=null;
+      setThumb(thumb1,null);
+      setThumb(thumb2,null);
+      draw();
+    }
+
+    draw();
+  </script>
+</body>
+</html>
